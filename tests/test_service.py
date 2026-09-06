@@ -56,3 +56,15 @@ def test_import_sessions(runtime):
     assert svc.import_sessions(sessions, log=lambda *_: None) == 0
     assert memory.count_turns() == 2
     assert svc.recall("old question", k=1)["hits"][0]["source"] == "chatgpt"
+
+
+def test_plan_ranks_candidates(runtime):
+    cfg, memory, engine, bus, state, svc = runtime
+    svc.observe("user", "how should the dashboard show agent roles?", mouth="claude-code")
+    svc.observe("assistant", "a table with one row per agent", mouth="claude-code")
+    svc.observe("user", "and what about colours?", mouth="claude-code")
+    res = svc.plan(["use a colour per role", "ignore colours entirely", ""])
+    assert len(res["ranked"]) == 2
+    assert all(isinstance(r["fit"], float) for r in res["ranked"])
+    assert res["ranked"][0]["fit"] >= res["ranked"][1]["fit"]
+    assert any(e["type"] == "plan" for e in bus.history)

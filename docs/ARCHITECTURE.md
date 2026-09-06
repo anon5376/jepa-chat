@@ -109,6 +109,7 @@ re-embedded periodically. A `latent_std` watchdog pauses training on collapse.
 | `jepa_state()` | turns, mouths seen, surprise trend, top memories, training stats |
 | `jepa_recall(query, k)` | related past turns across sessions and apps |
 | `jepa_predict_next()` | nearest past user turns to the predicted next latent |
+| `jepa_plan(candidates)` | latent planning: rank draft replies by fit to the predicted next latent, preview imagined user reaction |
 | `jepa_session(new/resume/list/current)` | switch conversations |
 | `jepa_stats()`, `jepa_control(pause/resume/checkpoint/reembed)` | training |
 

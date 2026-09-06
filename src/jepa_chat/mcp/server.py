@@ -19,6 +19,8 @@ Protocol:
 2. After you answer, call jepa_observe(role="assistant", text=<your answer>).
 3. When the user refers to something from the past, call jepa_recall(query=...).
 4. If the user says "continue where I left off", call jepa_state() and jepa_recall().
+6. For an important reply, draft 2-4 candidate answers and call jepa_plan(candidates) to pick
+   the one that best fits where the conversation is going.
 5. Pass mouth=<your app name> (claude-code, claude-desktop, cursor, chatgpt) on every call.
 Never invent memories: only cite what jepa_recall / jepa_observe returned.
 """
@@ -89,6 +91,15 @@ def build_mcp(svc: CoreService) -> MCPServer:
         for h in res["hints"]:
             h.pop("text", None)
         return res
+
+    @mcp.tool(
+        description=(
+            "Latent planning: rank candidate replies by how well they match the core's predicted next turn, "
+            "and preview the user reaction the core imagines after each. Pass 2-5 short candidate replies."
+        )
+    )
+    async def jepa_plan(candidates: list[str], session_id: str | None = None, horizon: int = 1) -> dict:
+        return await asyncio.to_thread(svc.plan, candidates, session_id, horizon)
 
     @mcp.tool(description="Manage sessions: new | resume | list | current.")
     async def jepa_session(

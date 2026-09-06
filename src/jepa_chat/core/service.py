@@ -277,6 +277,57 @@ class CoreService:
             "confidence": round(conf, 3),
         }
 
+    # ------------------------------------------------------------ planning
+    def plan(self, candidates: list[str], session_id: str | None = None, horizon: int = 1) -> dict:
+        """Score candidate assistant replies in latent space.
+
+        fit: how close each candidate's latent is to the core's predicted next-assistant latent
+        (cosine, higher is better). reaction_hint: the past user turn nearest to the user
+        reaction the core imagines after that candidate. Candidates are returned ranked.
+        """
+        candidates = [c for c in candidates if c and c.strip()]
+        sid = session_id or self.state.active_session_id
+        ss = self._get_session_state(sid)
+        if ss is None or not candidates:
+            return {"session_id": sid, "ranked": [], "note": "no session or no candidates"}
+        snap = self.engine.snapshot()
+        turns = [
+            t for t in self.memory.session_turns(ss.session_id, self.cfg.conversation.max_turns) if t.latent is not None
+        ]
+        if not turns:
+            return {"session_id": sid, "ranked": [], "note": "session has no embedded turns"}
+        z_hist = np.stack([t.latent for t in turns])
+        roles = [role_id(t.role) for t in turns]
+        pred_asst = ss.pending_pred.get(1)
+        z_c = snap.embed(candidates)
+        import torch
+
+        zc_n = normalize_latent(torch.from_numpy(z_c)).numpy()
+        out = []
+        for i, text in enumerate(candidates):
+            fit = None
+            if pred_asst is not None:
+                fit = float(pred_asst @ zc_n[i] / (np.linalg.norm(pred_asst) * np.linalg.norm(zc_n[i]) + 1e-8))
+            # imagine: history + this candidate -> predicted user reaction (+ optional further turns)
+            z_imag = np.concatenate([z_hist, z_c[i : i + 1]], 0)
+            r_imag = roles + [1]
+            future = snap.rollout(z_imag, r_imag, [0, 1][: max(1, min(horizon, 2))])
+            react = future[0]
+            hits = self.memory.search(react, k=1, role="user", exclude_session=ss.session_id)
+            hint = _snippet(hits[0].turn.text, 120) if hits else None
+            novelty = float(1.0 - max((h.score for h in self.memory.search(z_c[i], k=1)), default=0.0))
+            out.append(
+                {
+                    "candidate": _snippet(text, 140),
+                    "fit": None if fit is None else round(fit, 3),
+                    "novelty": round(novelty, 3),
+                    "expected_user_reaction_hint": hint,
+                }
+            )
+        out.sort(key=lambda d: (d["fit"] if d["fit"] is not None else -1.0), reverse=True)
+        self.bus.publish("plan", session_id=ss.session_id, n=len(out), best=out[0]["candidate"] if out else None)
+        return {"session_id": ss.session_id, "ranked": out, "horizon": horizon}
+
     # ------------------------------------------------------------ state / stats
     def _map(self, ss: SessionState) -> dict:
         turns = self.memory.session_turns(ss.session_id, self.cfg.core.map_points)

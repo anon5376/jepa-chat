@@ -243,6 +243,8 @@ class JepaDashboard(App):
                     "paused": False,
                 }
             )
+        elif kind == "plan":
+            self.log_line(f"[magenta]plan[/] {ev.get('n')} candidates -> best: {ev.get('best')}")
         elif kind == "recall":
             self.log_line(f"[cyan]recall[/] {ev.get('query')} -> {len(ev.get('hits') or [])} hits")
         elif kind in ("session", "checkpoint", "warning", "reembed", "import", "snapshot", "training"):

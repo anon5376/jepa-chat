@@ -131,6 +131,14 @@ def create_app(rt: CoreRuntime) -> Starlette:
         body = await request.json() if request.method == "POST" else {}
         return JSONResponse(await asyncio.to_thread(svc.predict_next, body.get("session_id"), int(body.get("k", 5))))
 
+    async def plan(request: Request):
+        body = await request.json()
+        return JSONResponse(
+            await asyncio.to_thread(
+                svc.plan, list(body.get("candidates") or []), body.get("session_id"), int(body.get("horizon", 1))
+            )
+        )
+
     async def session(request: Request):
         body = await request.json()
         try:
@@ -206,6 +214,7 @@ def create_app(rt: CoreRuntime) -> Starlette:
         Route("/api/recall", recall, methods=["POST"]),
         Route("/api/predict", predict, methods=["GET", "POST"]),
         Route("/api/session", session, methods=["POST"]),
+        Route("/api/plan", plan, methods=["POST"]),
         Route("/api/control", control, methods=["POST"]),
         Route("/api/stats", stats, methods=["GET"]),
         Route("/api/import", import_memory, methods=["POST"]),

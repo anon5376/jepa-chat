@@ -26,6 +26,7 @@ async def test_tools_and_observe(runtime):
             "jepa_session",
             "jepa_stats",
             "jepa_control",
+            "jepa_plan",
         }
         r = await c.call_tool("jepa_observe", {"role": "user", "text": "hello core", "mouth": "cursor"})
         assert not r.is_error

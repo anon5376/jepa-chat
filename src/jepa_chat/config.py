@@ -80,6 +80,9 @@ class CoreConfig:
     recall_k: int = 5
     map_points: int = 200
     collapse_floor: float = 0.3  # pause training if latent_std < floor * pretrain value
+    steps_per_new_turn: int = 20  # online steps earned per newly observed live turn
+    idle_steps_per_min: float = 2.0  # slow background replay rate when nothing new arrives
+    max_step_budget: int = 400  # cap on banked steps so a burst of turns cannot spin for hours
 
 
 @dataclass

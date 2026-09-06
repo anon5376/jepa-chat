@@ -11,7 +11,7 @@ import torch
 
 from jepa_chat.config import Config
 from jepa_chat.core.checkpoint import build_models, load_checkpoint, save_checkpoint
-from jepa_chat.core.paths import default_checkpoint, turns_jsonl
+from jepa_chat.core.paths import pretrained_checkpoint, turns_jsonl
 from jepa_chat.data.conversation_dataset import LatentCache, turn_text_dataset
 from jepa_chat.data.masking import sample_masks
 from jepa_chat.data.tokenizer import ByteTokenizer
@@ -122,7 +122,7 @@ def main() -> None:
     ap.add_argument("--config", default=None, help="YAML config (defaults: max_len 512)")
     ap.add_argument("--stage", choices=["level1", "level2", "all"], default="all")
     ap.add_argument("--init", default=None, help="checkpoint to start from (required for --stage level2)")
-    ap.add_argument("--out", default=str(default_checkpoint()))
+    ap.add_argument("--out", default=str(pretrained_checkpoint()))
     ap.add_argument("--steps1", type=int, default=3000)
     ap.add_argument("--steps2", type=int, default=2000)
     ap.add_argument("--device", default="auto")

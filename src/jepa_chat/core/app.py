@@ -21,7 +21,7 @@ from jepa_chat.config import Config
 from jepa_chat.core.checkpoint import build_models, load_checkpoint
 from jepa_chat.core.engine import ModelThread
 from jepa_chat.core.memory import MemoryStore
-from jepa_chat.core.paths import ensure_dirs, jepa_home, memory_db
+from jepa_chat.core.paths import ensure_dirs, jepa_home, memory_db, pretrained_checkpoint
 from jepa_chat.core.service import CoreService
 from jepa_chat.core.state import CoreState, EventBus
 from jepa_chat.mcp.server import build_mcp
@@ -42,8 +42,10 @@ class CoreRuntime:
 
 def build_runtime(checkpoint: str | Path | None, train: bool = True, device: str = "auto") -> CoreRuntime:
     home = ensure_dirs(jepa_home())
-    if checkpoint and Path(checkpoint).expanduser().exists():
-        loaded = load_checkpoint(checkpoint)
+    live_path = Path(checkpoint).expanduser() if checkpoint else home / "checkpoints" / "core.pt"
+    source = live_path if live_path.exists() else pretrained_checkpoint(home)
+    if source.exists():
+        loaded = load_checkpoint(source)
         cfg, l1, l2 = loaded.cfg, loaded.level1, loaded.level2
         step, ver, o1, o2, pstd = (
             loaded.step,
@@ -52,13 +54,13 @@ def build_runtime(checkpoint: str | Path | None, train: bool = True, device: str
             loaded.opt2_state,
             loaded.pretrain_latent_std,
         )
-        log.info("loaded checkpoint %s (v%d, step %d)", checkpoint, loaded.format_version, step)
+        log.info("loaded checkpoint %s (v%d, step %d)", source, loaded.format_version, step)
     else:
         cfg = Config()
         cfg.model.max_len = 512
         l1, l2 = build_models(cfg)
         step, ver, o1, o2, pstd = 0, 0, None, None, None
-        log.warning("no checkpoint at %s: starting from random weights", checkpoint)
+        log.warning("no checkpoint at %s or %s: starting from random weights", live_path, pretrained_checkpoint(home))
     dev = pick_device(device if device != "auto" else cfg.core.device)
     bus = EventBus()
     state = CoreState()
@@ -76,7 +78,7 @@ def build_runtime(checkpoint: str | Path | None, train: bool = True, device: str
         bus,
         state,
         dev,
-        checkpoint_path=str(checkpoint or (home / "checkpoints" / "core.pt")),
+        checkpoint_path=str(live_path),
         step=step,
         enc_version=ver,
         opt1_state=o1,

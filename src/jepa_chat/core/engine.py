@@ -130,6 +130,12 @@ class ModelThread(threading.Thread):
         self._jobs: queue.Queue = queue.Queue()
         self._last_event_ts = 0.0
         self._step_times: list[float] = []
+        # learning budget: steps are earned by new experience (live turns) plus a slow idle trickle.
+        # Replaying a fixed corpus for hours degrades the latents (measured: effective rank 18 -> 12
+        # over 82k idle steps), so we do not train unboundedly.
+        self._budget = 0.0
+        self._last_budget_ts = time.time()
+        self._budget_lock = threading.Lock()
         st = self.state.training
         st.step, st.enc_version, st.device = step, enc_version, str(device)
         st.pretrain_latent_std, st.paused = pretrain_latent_std, self._pause.is_set()
@@ -150,6 +156,30 @@ class ModelThread(threading.Thread):
         with self._snapshot_lock:
             assert self._snapshot is not None
             return self._snapshot
+
+    # ------------------------------------------------------------ budget
+    def notify_new_turn(self, n: int = 1) -> None:
+        """Called by the service whenever a live turn is observed: earns training steps."""
+        with self._budget_lock:
+            self._budget = min(self._budget + n * self.core.steps_per_new_turn, self.core.max_step_budget)
+
+    def _take_step_budget(self) -> bool:
+        now = time.time()
+        with self._budget_lock:
+            self._budget = min(
+                self._budget + (now - self._last_budget_ts) * self.core.idle_steps_per_min / 60.0,
+                self.core.max_step_budget,
+            )
+            self._last_budget_ts = now
+            if self._budget >= 1.0:
+                self._budget -= 1.0
+                return True
+            return False
+
+    @property
+    def step_budget(self) -> float:
+        with self._budget_lock:
+            return self._budget
 
     # ------------------------------------------------------------ control
     @property
@@ -318,7 +348,7 @@ class ModelThread(threading.Thread):
     def run(self) -> None:
         while not self._stop_evt.is_set():
             self._drain_jobs()
-            if self._pause.is_set():
+            if self._pause.is_set() or not self._take_step_budget():
                 time.sleep(0.2)
                 continue
             m = self.train_step()

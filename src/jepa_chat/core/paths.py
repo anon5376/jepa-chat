@@ -18,7 +18,13 @@ def ensure_dirs(home: Path | None = None) -> Path:
 
 
 def default_checkpoint(home: Path | None = None) -> Path:
+    """The daemon's live checkpoint (overwritten as it learns online)."""
     return (home or jepa_home()) / "checkpoints" / "core.pt"
+
+
+def pretrained_checkpoint(home: Path | None = None) -> Path:
+    """Immutable output of jepa-pretrain; the daemon never writes here."""
+    return (home or jepa_home()) / "checkpoints" / "pretrained.pt"
 
 
 def memory_db(home: Path | None = None) -> Path:

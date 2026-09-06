@@ -5,11 +5,12 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import shutil
 import sys
 import urllib.error
 import urllib.request
 
-from jepa_chat.core.paths import default_checkpoint, turns_jsonl
+from jepa_chat.core.paths import default_checkpoint, pretrained_checkpoint, turns_jsonl
 
 
 def _url(args: argparse.Namespace, path: str) -> str:
@@ -59,6 +60,20 @@ def cmd_control(args: argparse.Namespace) -> None:
     print(_post(_url(args, "/api/control"), {"action": args.action}))
 
 
+def cmd_reset(args: argparse.Namespace) -> None:
+    """Discard online learning: replace the live checkpoint with the pretrained one (stop the daemon first)."""
+    src, dst = pretrained_checkpoint(), default_checkpoint()
+    if not src.exists():
+        print(f"no pretrained checkpoint at {src}; run jepa-pretrain first")
+        sys.exit(1)
+    if dst.exists():
+        backup = dst.with_suffix(".bak.pt")
+        shutil.copy2(dst, backup)
+        print(f"backed up live checkpoint to {backup}")
+    shutil.copy2(src, dst)
+    print(f"reset {dst} from {src}; restart jepa-core (it will re-embed memory on start)")
+
+
 def cmd_install(args: argparse.Namespace) -> None:
     from jepa_chat.mcp.clients import install_client
 
@@ -72,7 +87,11 @@ def main() -> None:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("serve", help="run the daemon")
-    s.add_argument("--checkpoint", default=str(default_checkpoint()))
+    s.add_argument(
+        "--checkpoint",
+        default=str(default_checkpoint()),
+        help="live checkpoint path; falls back to checkpoints/pretrained.pt when missing",
+    )
     s.add_argument("--no-train", action="store_true", help="disable online learning")
     s.add_argument("--device", default="auto")
     s.set_defaults(fn=cmd_serve)
@@ -87,6 +106,9 @@ def main() -> None:
     c = sub.add_parser("control", help="pause | resume | checkpoint | reembed")
     c.add_argument("action", choices=["pause", "resume", "checkpoint", "reembed"])
     c.set_defaults(fn=cmd_control)
+
+    rs = sub.add_parser("reset", help="replace live checkpoint with the pretrained one")
+    rs.set_defaults(fn=cmd_reset)
 
     ic = sub.add_parser("install-client", help="print (or write) client registration")
     ic.add_argument("client", choices=["claude-code", "claude-desktop", "cursor", "all"])

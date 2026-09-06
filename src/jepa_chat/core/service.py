@@ -188,6 +188,7 @@ class CoreService:
         )
         row = self.memory.add_turn(ss.session_id, role, mouth, "live", text, now, z, snap.version, ratio, pred)
         self.memory.touch_session(ss.session_id, now, mouth)
+        self.engine.notify_new_turn()
         ss.n_turns += 1
         ss.mouths.add(mouth)
         ss.last_role, ss.last_ts = role, now
@@ -394,6 +395,7 @@ class CoreService:
         t = self.state.training.to_dict()
         t.update(
             {
+                "step_budget": round(self.engine.step_budget, 1),
                 "memory_turns": self.memory.count_turns(),
                 "memory_sessions": self.memory.count_sessions(),
                 "uptime_s": round(time.time() - self.state.started_ts, 1),

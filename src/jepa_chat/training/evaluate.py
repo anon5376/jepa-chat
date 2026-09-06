@@ -9,7 +9,7 @@ import numpy as np
 import torch
 
 from jepa_chat.core.checkpoint import load_checkpoint
-from jepa_chat.core.paths import default_checkpoint, turns_jsonl
+from jepa_chat.core.paths import default_checkpoint, pretrained_checkpoint, turns_jsonl
 from jepa_chat.data.conversation_dataset import LatentCache
 from jepa_chat.data.tokenizer import ByteTokenizer
 from jepa_chat.data.turns import read_jsonl
@@ -103,7 +103,10 @@ def effective_rank(z: np.ndarray) -> float:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Evaluate a ChatJEPA checkpoint")
-    ap.add_argument("--checkpoint", default=str(default_checkpoint()))
+    ap.add_argument(
+        "--checkpoint",
+        default=str(default_checkpoint() if default_checkpoint().exists() else pretrained_checkpoint()),
+    )
     ap.add_argument("--data", default=str(turns_jsonl()))
     ap.add_argument("--holdout", type=float, default=0.2)
     ap.add_argument("--seed", type=int, default=0)

@@ -22,3 +22,14 @@
 - Byte latent is a session/style embedding, not a topic embedding: recall went hybrid (latent + BM25).
 - Latent planning tool `jepa_plan` added. Full demo path verified: daemon, 8.4k-turn memory,
   proxy, TUI with two mouths on one session.
+
+## 2026-09-07
+
+- Overnight the daemon ran 82k online steps on the fixed 8.4k-turn corpus. Result vs the fresh
+  pretrained checkpoint: effective rank 18 -> 12, same-session@1 0.59 -> 0.54, surprise ratio
+  0.50 -> 0.68 (Level 2 got worse even with contaminated held-out). Unbounded replay of a static
+  corpus degrades the latents; online learning must be tied to new experience.
+- Fix: a step budget. Each observed live turn earns `steps_per_new_turn` (20) steps; idle
+  replay trickles at `idle_steps_per_min` (2); bank capped at 400. Also: `jepa-pretrain` now
+  writes `pretrained.pt` (immutable) and the daemon only ever writes `core.pt`; `jepa-core reset`
+  restores the pretrained weights.

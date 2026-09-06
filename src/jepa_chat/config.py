@@ -44,10 +44,49 @@ class TrainConfig:
 
 
 @dataclass
+class ConversationConfig:
+    """Level 2: predictor over sequences of turn latents."""
+
+    d_model: int = 128
+    n_heads: int = 4
+    n_layers: int = 4
+    max_turns: int = 64
+    n_roles: int = 3  # 0 = user, 1 = assistant, 2 = other/system
+    dropout: float = 0.1
+    head_bytes: int = 384  # turn truncation: keep this many bytes from the start
+    tail_bytes: int = 128  # and this many from the end
+
+
+@dataclass
+class CoreConfig:
+    """Long-running daemon settings."""
+
+    host: str = "127.0.0.1"
+    port: int = 8765
+    home: str = "~/.jepa-chat"
+    checkpoint: str = "~/.jepa-chat/checkpoints/core.pt"
+    device: str = "auto"
+    online_lr: float = 1e-4
+    online_batch_sessions: int = 16
+    online_window: int = 32
+    live_ratio: float = 0.25
+    ema_momentum: float = 0.998
+    snapshot_every: int = 25
+    checkpoint_every: int = 300
+    reembed_every: int = 500
+    train_on_start: bool = True
+    recall_k: int = 5
+    map_points: int = 200
+    collapse_floor: float = 0.3  # pause training if latent_std < floor * pretrain value
+
+
+@dataclass
 class Config:
     model: ModelConfig = field(default_factory=ModelConfig)
     mask: MaskConfig = field(default_factory=MaskConfig)
     train: TrainConfig = field(default_factory=TrainConfig)
+    conversation: ConversationConfig = field(default_factory=ConversationConfig)
+    core: CoreConfig = field(default_factory=CoreConfig)
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> Config:
@@ -59,6 +98,21 @@ class Config:
             model=ModelConfig(**raw.get("model", {})),
             mask=MaskConfig(**mask_raw),
             train=TrainConfig(**raw.get("train", {})),
+            conversation=ConversationConfig(**raw.get("conversation", {})),
+            core=CoreConfig(**raw.get("core", {})),
+        )
+
+    @classmethod
+    def from_dict(cls, raw: dict) -> Config:
+        mask_raw = dict(raw.get("mask", {}))
+        if "target_span_frac" in mask_raw:
+            mask_raw["target_span_frac"] = tuple(mask_raw["target_span_frac"])
+        return cls(
+            model=ModelConfig(**raw.get("model", {})),
+            mask=MaskConfig(**mask_raw),
+            train=TrainConfig(**raw.get("train", {})),
+            conversation=ConversationConfig(**raw.get("conversation", {})),
+            core=CoreConfig(**raw.get("core", {})),
         )
 
     def to_dict(self) -> dict:

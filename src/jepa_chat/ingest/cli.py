@@ -49,9 +49,7 @@ def main() -> None:
     ap.add_argument("--chatgpt", action="append", help="official ChatGPT export (.zip/.json/dir)")
     ap.add_argument("--claude", action="append", help="Claude.ai export (.zip/.json/dir)")
     ap.add_argument("--markdown", action="append", help="markdown transcript(s) (.md/.zip/dir)")
-    ap.add_argument(
-        "--claude-code", action="store_true", help="include local Claude Code transcripts"
-    )
+    ap.add_argument("--claude-code", action="store_true", help="include local Claude Code transcripts")
     ap.add_argument("--claude-code-root", default=None, help="override ~/.claude/projects")
     ap.add_argument("--min-turns", type=int, default=2)
     ap.add_argument("--out", default=str(DEFAULT_OUT))

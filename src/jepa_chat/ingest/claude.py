@@ -20,9 +20,7 @@ def _message_text(msg: dict) -> str | None:
     if not text:
         blocks = msg.get("content") or []
         text = "\n".join(
-            (b.get("text") or "").strip()
-            for b in blocks
-            if isinstance(b, dict) and b.get("type") == "text"
+            (b.get("text") or "").strip() for b in blocks if isinstance(b, dict) and b.get("type") == "text"
         ).strip()
     return text or None
 
@@ -36,9 +34,7 @@ def parse_conversation(conv: dict) -> Session | None:
         text = _message_text(msg)
         if not text:
             continue
-        turns.append(
-            Turn(role=role, text=text, ts=parse_iso_ts(msg.get("created_at")), mouth="claude")
-        )
+        turns.append(Turn(role=role, text=text, ts=parse_iso_ts(msg.get("created_at")), mouth="claude"))
     if not turns:
         return None
     return Session(

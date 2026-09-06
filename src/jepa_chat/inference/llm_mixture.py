@@ -57,8 +57,6 @@ class MixtureRouter:
         self._turn += 1
         return self.backends[idx % len(self.backends)]
 
-    def generate(
-        self, latent: torch.Tensor | None, prompt: str, history: Sequence[tuple[str, str]]
-    ) -> tuple[str, str]:
+    def generate(self, latent: torch.Tensor | None, prompt: str, history: Sequence[tuple[str, str]]) -> tuple[str, str]:
         backend = self.route(latent, prompt)
         return backend.name, backend.generate(prompt, history)

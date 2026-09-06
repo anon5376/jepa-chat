@@ -47,21 +47,15 @@ def parse_markdown(path: str | Path) -> Iterator[Session]:
     if path.suffix == ".zip":
         with zipfile.ZipFile(path) as z:
             for n in sorted(x for x in z.namelist() if x.endswith(".md")):
-                s = parse_markdown_text(
-                    z.open(n).read().decode("utf-8", "replace"), f"md:{n}", Path(n).stem
-                )
+                s = parse_markdown_text(z.open(n).read().decode("utf-8", "replace"), f"md:{n}", Path(n).stem)
                 if s:
                     yield s
     elif path.is_dir():
         for f in sorted(path.rglob("*.md")):
-            s = parse_markdown_text(
-                f.read_text(encoding="utf-8", errors="replace"), f"md:{f.name}", f.stem
-            )
+            s = parse_markdown_text(f.read_text(encoding="utf-8", errors="replace"), f"md:{f.name}", f.stem)
             if s:
                 yield s
     else:
-        s = parse_markdown_text(
-            path.read_text(encoding="utf-8", errors="replace"), f"md:{path.name}", path.stem
-        )
+        s = parse_markdown_text(path.read_text(encoding="utf-8", errors="replace"), f"md:{path.name}", path.stem)
         if s:
             yield s

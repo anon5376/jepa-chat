@@ -22,9 +22,7 @@ def _text_from_content(content: object) -> str | None:
         text = content.strip()
     elif isinstance(content, list):
         text = "\n".join(
-            (b.get("text") or "").strip()
-            for b in content
-            if isinstance(b, dict) and b.get("type") == "text"
+            (b.get("text") or "").strip() for b in content if isinstance(b, dict) and b.get("type") == "text"
         ).strip()
     else:
         return None

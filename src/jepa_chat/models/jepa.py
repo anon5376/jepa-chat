@@ -53,9 +53,7 @@ class TextJEPA(nn.Module):
 
     @torch.no_grad()
     def update_target_encoder(self, momentum: float) -> None:
-        for p_online, p_target in zip(
-            self.encoder.parameters(), self.target_encoder.parameters(), strict=True
-        ):
+        for p_online, p_target in zip(self.encoder.parameters(), self.target_encoder.parameters(), strict=True):
             p_target.mul_(momentum).add_(p_online.detach(), alpha=1.0 - momentum)
 
     @torch.no_grad()

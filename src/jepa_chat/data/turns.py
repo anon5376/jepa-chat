@@ -1,7 +1,7 @@
 """Turn / session dataclasses and the unified JSONL interchange format.
 
 One session per line:
-{"id": ..., "title": ..., "source": ..., "created_ts": ..., "turns": [{"role", "text", "ts", "mouth"}, ...]}
+{"id", "title", "source", "created_ts", "turns": [{"role", "text", "ts", "mouth"}, ...]}
 """
 
 from __future__ import annotations
@@ -60,11 +60,7 @@ def truncate_turn(text: str, head: int, tail: int) -> str:
         return text
     if tail <= 0:
         return raw[:head].decode("utf-8", errors="ignore")
-    return (
-        raw[:head].decode("utf-8", errors="ignore")
-        + " … "
-        + raw[-tail:].decode("utf-8", errors="ignore")
-    )
+    return raw[:head].decode("utf-8", errors="ignore") + " … " + raw[-tail:].decode("utf-8", errors="ignore")
 
 
 def write_jsonl(sessions: Iterable[Session], out: str | Path) -> int:

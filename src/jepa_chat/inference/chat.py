@@ -5,21 +5,17 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import torch
-
 from jepa_chat.config import Config, ModelConfig
+from jepa_chat.core.checkpoint import load_checkpoint
 from jepa_chat.data.tokenizer import ByteTokenizer
 from jepa_chat.inference.llm_mixture import EchoBackend, MixtureRouter
 from jepa_chat.models.jepa import TextJEPA
 
 
 def load_model(path: str | Path | None) -> TextJEPA | None:
-    if path is None or not Path(path).exists():
+    if path is None or not Path(path).expanduser().exists():
         return None
-    ckpt = torch.load(path, map_location="cpu")
-    cfg = ModelConfig(**ckpt["config"]["model"])
-    model = TextJEPA(cfg)
-    model.load_state_dict(ckpt["model"])
+    model = load_checkpoint(path).level1
     model.eval()
     return model
 

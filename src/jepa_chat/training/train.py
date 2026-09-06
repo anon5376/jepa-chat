@@ -56,16 +56,11 @@ def train(cfg: Config) -> Path:
         out.loss.backward()
         torch.nn.utils.clip_grad_norm_(params, 1.0)
         opt.step()
-        model.update_target_encoder(
-            ema_momentum(step, cfg.train.steps, cfg.train.ema_start, cfg.train.ema_end)
-        )
+        model.update_target_encoder(ema_momentum(step, cfg.train.steps, cfg.train.ema_start, cfg.train.ema_end))
 
         if step % cfg.train.log_every == 0 or step == 1:
             elapsed = time.time() - t0
-            print(
-                f"step {step:5d} loss {out.loss.item():.4f} "
-                f"latent_std {out.latent_std.item():.4f} ({elapsed:.1f}s)"
-            )
+            print(f"step {step:5d} loss {out.loss.item():.4f} latent_std {out.latent_std.item():.4f} ({elapsed:.1f}s)")
 
     ckpt = Path(cfg.train.checkpoint_path)
     ckpt.parent.mkdir(parents=True, exist_ok=True)

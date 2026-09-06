@@ -22,9 +22,7 @@ class TextEncoder(nn.Module):
             batch_first=True,
             norm_first=True,
         )
-        self.blocks = nn.TransformerEncoder(
-            layer, num_layers=cfg.n_layers, enable_nested_tensor=False
-        )
+        self.blocks = nn.TransformerEncoder(layer, num_layers=cfg.n_layers, enable_nested_tensor=False)
         self.norm = nn.LayerNorm(cfg.d_model)
 
     def forward(self, ids: torch.Tensor, visible: torch.Tensor) -> torch.Tensor:

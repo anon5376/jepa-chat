@@ -22,9 +22,7 @@ class LatentPredictor(nn.Module):
             batch_first=True,
             norm_first=True,
         )
-        self.blocks = nn.TransformerEncoder(
-            layer, num_layers=cfg.predictor_n_layers, enable_nested_tensor=False
-        )
+        self.blocks = nn.TransformerEncoder(layer, num_layers=cfg.predictor_n_layers, enable_nested_tensor=False)
         self.norm = nn.LayerNorm(cfg.predictor_d_model)
         self.out = nn.Linear(cfg.predictor_d_model, cfg.d_model)
         nn.init.trunc_normal_(self.mask_token, std=0.02)

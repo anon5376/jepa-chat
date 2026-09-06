@@ -1,0 +1,24 @@
+model:
+  max_len: 256
+  d_model: 128
+  n_heads: 4
+  n_layers: 4
+  predictor_d_model: 64
+  predictor_n_layers: 2
+
+mask:
+  num_targets: 2
+  target_span_frac: [0.10, 0.25]
+  min_context_frac: 0.4
+
+train:
+  corpus_path: null   # set to a .txt file under data/ for real text
+  seq_len: 128
+  batch_size: 32
+  steps: 500
+  lr: 0.0003
+  ema_start: 0.996
+  ema_end: 1.0
+  log_every: 25
+  checkpoint_path: checkpoints/text_jepa.pt
+  device: auto

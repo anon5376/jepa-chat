@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Experiment outputs
+checkpoints/*
+!checkpoints/.gitkeep
+data/*
+!data/.gitkeep
+runs/
+wandb/
+*.pt
+*.ckpt
+
+# OS / editors
+.DS_Store
+.vscode/
+.idea/
+
+# Secrets
+.env

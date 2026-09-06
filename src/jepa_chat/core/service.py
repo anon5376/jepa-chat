@@ -78,7 +78,12 @@ class CoreService:
         """Session state for reads: rehydrates from memory if it is not in RAM yet."""
         sid = session_id or self.state.active_session_id
         if not sid:
-            return None
+            recent = self.memory.list_sessions(1)
+            if not recent:
+                return None
+            sid = recent[0].id
+            with self.state.lock:
+                self.state.active_session_id = sid
         with self.state.lock:
             ss = self.state.sessions.get(sid)
             if ss is None:

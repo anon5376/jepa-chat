@@ -156,7 +156,9 @@ class JepaDashboard(App):
             label = label or ("calm" if value < 0.5 else "notable" if value < 0.9 else "surprising")
             color = {"calm": "green", "notable": "yellow", "surprising": "red"}[label]
             big.update(Text.assemble((f"{value:.2f}", f"bold {color}"), f"  {label}"))
-        self.query_one("#surprise_spark", Sparkline).data = self.surprises[-40:] or [0.0]
+        spark = self.query_one("#surprise_spark", Sparkline)
+        spark.display = bool(self.surprises)
+        spark.data = self.surprises[-40:] or [0.0]
         mean = sum(self.surprises) / len(self.surprises) if self.surprises else None
         self.query_one("#surprise_note", Static).update(
             f"0 = predicted, 1 = chance | mean {mean:.2f} over {len(self.surprises)}" if mean is not None else ""
@@ -168,7 +170,7 @@ class JepaDashboard(App):
         self.session_ids = []
         for s in sessions[:12]:
             mark = "▶ " if s.get("active") else "  "
-            title = (s.get("title") or s["id"])[:22]
+            title = (s.get("title") or s["id"])[:18]
             t.add_row(f"{mark}{title}", str(s.get("n_turns", 0)), s.get("mouth") or "-", _ago(s.get("last_ts")))
             self.session_ids.append(s["id"])
 
@@ -196,8 +198,10 @@ class JepaDashboard(App):
                 f"  (pretrain {f(tr.get('pretrain_latent_std'), 3)}){warn}"
             )
         )
-        self.query_one("#loss_spark", Sparkline).data = self.loss2 or [0.0]
-        self.query_one("#std_spark", Sparkline).data = self.lstd or [0.0]
+        for wid, data in (("#loss_spark", self.loss2), ("#std_spark", self.lstd)):
+            w = self.query_one(wid, Sparkline)
+            w.display = len(data) > 1
+            w.data = data or [0.0]
 
     # ---------------------------------------------------------------- events
     @work(exclusive=False)

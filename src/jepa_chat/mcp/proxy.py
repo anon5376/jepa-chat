@@ -18,25 +18,19 @@ DEFAULT_URL = os.environ.get("JEPA_CORE_URL", "http://127.0.0.1:8765/mcp")
 
 
 class Upstream:
+    """One short-lived HTTP client per request.
+
+    anyio cancel scopes are task-bound, so a client entered in one handler task cannot be
+    reused from another; a fresh connection per call is cheap on localhost and robust to
+    daemon restarts.
+    """
+
     def __init__(self, url: str, mouth: str):
         self.url = url
         self.mouth = mouth
-        self._client: Client | None = None
 
-    async def client(self) -> Client:
-        if self._client is None:
-            c = Client(self.url)
-            await c.__aenter__()
-            self._client = c
-        return self._client
-
-    async def reset(self) -> None:
-        if self._client is not None:
-            try:
-                await self._client.__aexit__(None, None, None)
-            except Exception:  # noqa: BLE001
-                pass
-            self._client = None
+    def client(self) -> Client:
+        return Client(self.url)
 
 
 def build_proxy(url: str, mouth: str) -> Server:
@@ -47,10 +41,9 @@ def build_proxy(url: str, mouth: str) -> Server:
 
     async def on_list_tools(ctx, params):
         try:
-            c = await up.client()
-            return await c.list_tools()
+            async with up.client() as c:
+                return await c.list_tools()
         except Exception:  # noqa: BLE001
-            await up.reset()
             return types.ListToolsResult(tools=[])
 
     async def on_call_tool(ctx, params: types.CallToolRequestParams):
@@ -58,31 +51,32 @@ def build_proxy(url: str, mouth: str) -> Server:
         if "mouth" in args or params.name in ("jepa_observe", "jepa_session"):
             args.setdefault("mouth", mouth)
         try:
-            c = await up.client()
-            return await c.call_tool(params.name, args)
+            async with up.client() as c:
+                return await c.call_tool(params.name, args)
         except Exception as e:  # noqa: BLE001
-            await up.reset()
             return down(f"jepa-core not reachable at {url} ({e}). Start it with: uv run jepa-core serve")
 
     async def on_list_prompts(ctx, params):
         try:
-            return await (await up.client()).list_prompts()
+            async with up.client() as c:
+                return await c.list_prompts()
         except Exception:  # noqa: BLE001
-            await up.reset()
             return types.ListPromptsResult(prompts=[])
 
     async def on_get_prompt(ctx, params: types.GetPromptRequestParams):
-        return await (await up.client()).get_prompt(params.name, params.arguments)
+        async with up.client() as c:
+            return await c.get_prompt(params.name, params.arguments)
 
     async def on_list_resources(ctx, params):
         try:
-            return await (await up.client()).list_resources()
+            async with up.client() as c:
+                return await c.list_resources()
         except Exception:  # noqa: BLE001
-            await up.reset()
             return types.ListResourcesResult(resources=[])
 
     async def on_read_resource(ctx, params: types.ReadResourceRequestParams):
-        return await (await up.client()).read_resource(params.uri)
+        async with up.client() as c:
+            return await c.read_resource(params.uri)
 
     return Server(
         "jepa",

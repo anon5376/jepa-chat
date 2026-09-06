@@ -15,6 +15,7 @@ from jepa_chat.data.turns import role_id
 from jepa_chat.models.conversation import normalize_latent
 
 DEDUPE_WINDOW_S = 60.0
+MIN_RECALL_CHARS = 12  # hide one-word junk turns from recall/related
 
 
 def surprise_label(ratio: float | None) -> str:
@@ -182,7 +183,9 @@ class CoreService:
             baseline = self.memory.random_latents(32, self.rng)
             ratio, cos = surprise_ratio(pred, z, baseline)
 
-        related = self.memory.search(z, k=3, exclude_session=ss.session_id)
+        related = self.memory.search(
+            z, k=3, exclude_session=ss.session_id, query_chars=len(text), min_chars=MIN_RECALL_CHARS
+        )
         row = self.memory.add_turn(ss.session_id, role, mouth, "live", text, now, z, snap.version, ratio, pred)
         self.memory.touch_session(ss.session_id, now, mouth)
         ss.n_turns += 1
@@ -249,10 +252,18 @@ class CoreService:
         cross_session: bool = True,
         role: str | None = None,
         session_id: str | None = None,
+        lexical_weight: float = 0.5,
     ) -> dict:
         z = self.engine.snapshot().embed([query])[0]
-        exclude = None if cross_session else None
-        hits = self.memory.search(z, k=k, role=role, exclude_session=exclude)
+        hits = self.memory.search(
+            z,
+            k=k,
+            role=role,
+            query_chars=len(query),
+            min_chars=MIN_RECALL_CHARS,
+            query_text=query,
+            lexical_weight=lexical_weight,
+        )
         if not cross_session:
             sid = session_id or self.state.active_session_id
             hits = [h for h in hits if h.turn.session_id == sid]

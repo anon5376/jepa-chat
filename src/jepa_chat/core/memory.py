@@ -4,6 +4,8 @@ plus an in-memory cosine index over normalised turn latents."""
 from __future__ import annotations
 
 import hashlib
+import math
+import re
 import sqlite3
 import threading
 import time
@@ -26,6 +28,64 @@ CREATE INDEX IF NOT EXISTS turns_hash ON turns(text_hash, ts);
 CREATE TABLE IF NOT EXISTS metrics(
   step INTEGER, ts REAL, loss1 REAL, loss2 REAL, latent_std REAL, ms REAL);
 """
+
+
+_TOKEN = re.compile(r"[a-zA-Zа-яА-ЯёЁ0-9_]{2,}")
+
+
+def tokenize(text: str) -> list[str]:
+    return [t.lower() for t in _TOKEN.findall(text)]
+
+
+class BM25:
+    """Tiny in-memory BM25 over turn texts (lexical half of hybrid recall)."""
+
+    def __init__(self, k1: float = 1.2, b: float = 0.75):
+        self.k1, self.b = k1, b
+        self.df: dict[str, int] = {}
+        self.docs: dict[int, dict[str, int]] = {}
+        self.lens: dict[int, int] = {}
+        self.total_len = 0
+
+    def add(self, doc_id: int, text: str) -> None:
+        if doc_id in self.docs:
+            self.remove(doc_id)
+        toks = tokenize(text)
+        tf: dict[str, int] = {}
+        for t in toks:
+            tf[t] = tf.get(t, 0) + 1
+        for t in tf:
+            self.df[t] = self.df.get(t, 0) + 1
+        self.docs[doc_id] = tf
+        self.lens[doc_id] = len(toks)
+        self.total_len += len(toks)
+
+    def remove(self, doc_id: int) -> None:
+        tf = self.docs.pop(doc_id, None)
+        if tf is None:
+            return
+        for t in tf:
+            self.df[t] = self.df.get(t, 1) - 1
+        self.total_len -= self.lens.pop(doc_id, 0)
+
+    def scores(self, query: str) -> dict[int, float]:
+        n = len(self.docs)
+        if n == 0:
+            return {}
+        avg = self.total_len / n
+        out: dict[int, float] = {}
+        for q in set(tokenize(query)):
+            df = self.df.get(q, 0)
+            if df == 0:
+                continue
+            idf = math.log(1 + (n - df + 0.5) / (df + 0.5))
+            for doc_id, tf in self.docs.items():
+                f = tf.get(q)
+                if not f:
+                    continue
+                denom = f + self.k1 * (1 - self.b + self.b * self.lens[doc_id] / max(avg, 1e-6))
+                out[doc_id] = out.get(doc_id, 0.0) + idf * f * (self.k1 + 1) / denom
+        return out
 
 
 def text_hash(text: str) -> str:
@@ -102,47 +162,90 @@ class MemoryStore:
         self._db.executescript(_SCHEMA)
         self._db.commit()
         self._ids: list[int] = []
+        self._lens: list[int] = []
         self._raw = np.zeros((0, dim), np.float32)
         self._index = np.zeros((0, dim), np.float32)
         self._pos: dict[int, int] = {}
         self._mu: np.ndarray | None = None
         self._sd: np.ndarray | None = None
+        self._bucket_mu: dict[int, np.ndarray] = {}
         self._adds_since_refit = 0
+        self._bm25 = BM25()
         self._rebuild_index()
 
     # ------------------------------------------------------------ index
+    @staticmethod
+    def length_bucket(n_chars: int) -> int:
+        return int(np.log2(max(n_chars, 1)))
+
     def _rebuild_index(self) -> None:
-        rows = self._db.execute("SELECT id, latent FROM turns WHERE latent IS NOT NULL ORDER BY id").fetchall()
-        ids, vecs = [], []
+        rows = self._db.execute(
+            "SELECT id, latent, text, length(text) AS n FROM turns WHERE latent IS NOT NULL ORDER BY id"
+        ).fetchall()
+        ids, vecs, lens = [], [], []
+        self._bm25 = BM25()
         for r in rows:
             v = _unblob(r["latent"], self.dim)
             if v is not None:
                 ids.append(int(r["id"]))
                 vecs.append(v)
+                lens.append(int(r["n"] or 0))
+                self._bm25.add(int(r["id"]), r["text"] or "")
         self._ids = ids
+        self._lens = lens
         self._raw = np.stack(vecs) if vecs else np.zeros((0, self.dim), np.float32)
         self._pos = {tid: i for i, tid in enumerate(ids)}
         self._refit()
 
     def _refit(self) -> None:
-        """Recompute whitening stats from all raw latents and re-normalise the index."""
-        if self._raw.shape[0] >= 8:
+        """Recompute whitening stats from all raw latents and re-normalise the index.
+
+        Byte-level mean-pooled latents carry a strong text-length signature, so each latent is
+        first centred against the mean of turns in its log2-length bucket (nuisance removal),
+        then whitened by global per-dimension std.
+        """
+        n = self._raw.shape[0]
+        self._bucket_mu = {}
+        if n >= 8:
+            buckets = np.array([self.length_bucket(x) for x in self._lens])
+            for b in np.unique(buckets):
+                sel = buckets == b
+                if sel.sum() >= 5:
+                    self._bucket_mu[int(b)] = self._raw[sel].mean(0)
             self._mu = self._raw.mean(0)
-            self._sd = self._raw.std(0) + 1e-5
+            centred = self._centre(self._raw, self._lens)
+            self._sd = centred.std(0) + 1e-5
+            self._index = norm_for_index(centred, np.zeros(self.dim, np.float32), self._sd)
         else:
             self._mu = self._sd = None
-        self._index = norm_for_index(self._raw, self._mu, self._sd) if self._raw.shape[0] else self._raw.copy()
+            self._index = norm_for_index(self._raw) if n else self._raw.copy()
         self._adds_since_refit = 0
 
-    def _index_add(self, tid: int, latent: np.ndarray) -> None:
+    def _centre(self, z: np.ndarray, lens: list[int]) -> np.ndarray:
+        if self._mu is None:
+            return z
+        out = np.empty_like(z, dtype=np.float32)
+        for i, n in enumerate(lens):
+            out[i] = z[i] - self._bucket_mu.get(self.length_bucket(n), self._mu)
+        return out
+
+    def _transform(self, z: np.ndarray, n_chars: int) -> np.ndarray:
+        if self._mu is None:
+            return norm_for_index(z)
+        c = self._centre(np.asarray(z, np.float32)[None], [n_chars])
+        return norm_for_index(c, np.zeros(self.dim, np.float32), self._sd)[0]
+
+    def _index_add(self, tid: int, latent: np.ndarray, n_chars: int) -> None:
         raw = np.asarray(latent, np.float32)[None]
-        v = norm_for_index(raw, self._mu, self._sd)
+        v = self._transform(raw[0], n_chars)[None]
         if tid in self._pos:
             self._raw[self._pos[tid]] = raw[0]
             self._index[self._pos[tid]] = v[0]
+            self._lens[self._pos[tid]] = n_chars
         else:
             self._pos[tid] = len(self._ids)
             self._ids.append(tid)
+            self._lens.append(n_chars)
             self._raw = np.concatenate([self._raw, raw], 0)
             self._index = np.concatenate([self._index, v], 0)
         self._adds_since_refit += 1
@@ -244,7 +347,8 @@ class MemoryStore:
             )
             self._db.commit()
             if latent is not None:
-                self._index_add(tid, latent)
+                self._index_add(tid, latent, len(text))
+                self._bm25.add(tid, text)
             return TurnRow(
                 tid,
                 session_id,
@@ -326,12 +430,28 @@ class MemoryStore:
         exclude_session: str | None = None,
         role: str | None = None,
         exclude_ids: tuple[int, ...] = (),
+        query_chars: int | None = None,
+        min_chars: int = 0,
+        query_text: str | None = None,
+        lexical_weight: float = 0.5,
     ) -> list[Hit]:
+        """Hybrid recall: latent cosine blended with BM25 when query_text is given.
+
+        Both parts are min-max normalised over the candidate pool before blending, so the
+        returned score is in [0, 1] and comparable across queries.
+        """
         with self._lock:
             if self._index.shape[0] == 0:
                 return []
-            q = norm_for_index(query, self._mu, self._sd)
+            q = self._transform(np.asarray(query, np.float32), query_chars or 256)
             scores = self._index @ q
+            if query_text and lexical_weight > 0:
+                lex = self._bm25.scores(query_text)
+                if lex:
+                    lex_arr = np.array([lex.get(tid, 0.0) for tid in self._ids], dtype=np.float32)
+                    lex_arr /= max(float(lex_arr.max()), 1e-6)
+                    cos_n = (scores - scores.min()) / max(float(scores.max() - scores.min()), 1e-6)
+                    scores = (1 - lexical_weight) * cos_n + lexical_weight * lex_arr
             order = np.argsort(-scores)
             hits: list[Hit] = []
             cand = [int(self._ids[i]) for i in order[: max(k * 8, 64)]]
@@ -344,6 +464,8 @@ class MemoryStore:
                 if exclude_session and t.session_id == exclude_session:
                     continue
                 if role and t.role != role:
+                    continue
+                if len(t.text) < min_chars:
                     continue
                 hits.append(Hit(t, float(scores[i])))
                 if len(hits) >= k:
@@ -399,6 +521,11 @@ class MemoryStore:
                 out.append(turns)
             return out
 
+    def max_enc_version(self) -> int:
+        with self._lock:
+            v = self._db.execute("SELECT MAX(enc_version) FROM turns").fetchone()[0]
+            return int(v or 0)
+
     def stale_turn_ids(self, min_version: int, limit: int = 256) -> list[int]:
         with self._lock:
             rows = self._db.execute(
@@ -410,8 +537,11 @@ class MemoryStore:
         with self._lock:
             for tid, z in zip(ids, latents, strict=True):
                 self._db.execute("UPDATE turns SET latent=?, enc_version=? WHERE id=?", (_blob(z), version, tid))
-                self._index_add(tid, z)
+                n = self._lens[self._pos[tid]] if tid in self._pos else 0
+
+                self._index_add(tid, z, n)
             self._db.commit()
+            self._refit()
 
     # ---------------------------------------------------------- metrics
     def log_metric(self, step: int, loss1: float, loss2: float, latent_std: float, ms: float) -> None:

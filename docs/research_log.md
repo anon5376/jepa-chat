@@ -16,3 +16,9 @@
 - Fixes: whitened cosine index in memory; VICReg variance/covariance term on Level 1.
 - Corpus v2 (+ Codex rollouts, Cursor chats): 228 sessions / 8,379 turns, median 3 KB/turn.
   Raised Level 1 context to 1024 bytes (head 768 + tail 256). Pretraining rerun pending.
+- Corpus v2 pretraining: Level 1 stable (`latent_std` ~1.04). Level 2 held-out surprise ratio 0.50
+  (vs same-session) / 0.40 (vs other), AUROC 0.75 / 0.84 on 46 held-out sessions. First real
+  evidence the conversation predictor generalises. Details in experiments/003.
+- Byte latent is a session/style embedding, not a topic embedding: recall went hybrid (latent + BM25).
+- Latent planning tool `jepa_plan` added. Full demo path verified: daemon, 8.4k-turn memory,
+  proxy, TUI with two mouths on one session.

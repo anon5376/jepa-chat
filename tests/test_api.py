@@ -15,14 +15,18 @@ def client(runtime):
 
 
 def test_observe_state_events(client):
-    r = client.post("/api/observe", json={"role": "user", "text": "ping"}, headers={"x-jepa-mouth": "cursor"})
+    r = client.post(
+        "/api/observe", json={"role": "user", "text": "ping from the api test"}, headers={"x-jepa-mouth": "cursor"}
+    )
     assert r.status_code == 200 and r.json()["mouth"] == "cursor"
-    r = client.post("/api/observe", json={"role": "assistant", "text": "pong", "mouth": "cursor"})
+    r = client.post(
+        "/api/observe", json={"role": "assistant", "text": "pong back from the api test", "mouth": "cursor"}
+    )
     assert isinstance(r.json()["surprise"], float)
     st = client.get("/api/state").json()
     assert st["n_turns"] == 2 and st["training"]["paused"] is True
     assert client.get("/api/stats").json()["memory_turns"] == 2
-    assert client.post("/api/recall", json={"query": "ping"}).json()["hits"]
+    assert client.post("/api/recall", json={"query": "ping from the api test"}).json()["hits"]
     assert client.post("/api/session", json={"action": "list"}).json()["active"]
     assert client.post("/api/control", json={"action": "bogus"}).status_code == 400
 

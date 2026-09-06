@@ -73,14 +73,20 @@ def build_mcp(svc: CoreService) -> MCPServer:
         s.pop("metrics", None)
         return s
 
-    @mcp.tool(description="Recall past turns (across all sessions and apps) related to a query.")
+    @mcp.tool(
+        description=(
+            "Recall past turns across all sessions and apps. Hybrid score: JEPA latent similarity blended with "
+            "lexical BM25 (lexical_weight 0 = pure latent, 1 = pure keywords)."
+        )
+    )
     async def jepa_recall(
         query: str,
         k: int = 5,
         cross_session: bool = True,
         role: Literal["user", "assistant"] | None = None,
+        lexical_weight: float = 0.5,
     ) -> dict:
-        res = await asyncio.to_thread(svc.recall, query, k, cross_session, role)
+        res = await asyncio.to_thread(svc.recall, query, k, cross_session, role, None, lexical_weight)
         for h in res["hits"]:
             h.pop("text", None)
         return res

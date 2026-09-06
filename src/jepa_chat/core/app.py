@@ -63,6 +63,11 @@ def build_runtime(checkpoint: str | Path | None, train: bool = True, device: str
     bus = EventBus()
     state = CoreState()
     memory = MemoryStore(memory_db(home), cfg.model.d_model)
+    # encoder versions must stay monotonic across restarts; a different checkpoint than the one
+    # that produced the stored latents means every latent must be re-embedded
+    mem_ver = memory.max_enc_version()
+    needs_reembed = memory.count_turns() > 0 and mem_ver != ver
+    ver = max(mem_ver, ver)
     engine = ModelThread(
         cfg,
         l1,
@@ -79,6 +84,9 @@ def build_runtime(checkpoint: str | Path | None, train: bool = True, device: str
         pretrain_latent_std=pstd,
         train=train,
     )
+    if needs_reembed:
+        log.warning("checkpoint encoder differs from memory latents: scheduling full re-embed")
+        engine.request_reembed()
     service = CoreService(cfg, memory, engine, bus, state)
     return CoreRuntime(cfg, memory, engine, bus, state, service)
 

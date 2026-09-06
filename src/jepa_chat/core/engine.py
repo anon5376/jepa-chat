@@ -231,14 +231,27 @@ class ModelThread(threading.Thread):
         self.bus.publish("checkpoint", path=str(path), step=self.step)
 
     def reembed(self, force: bool = False, lag: int = 2) -> int:
-        ids = self.memory.stale_turn_ids(self.enc_version - (0 if force else lag), limit=512)
-        if not ids:
-            return 0
-        rows = self.memory.get_turns(ids)
-        z = self._embed_on_device([r.text for r in rows])
-        self.memory.update_latents([r.id for r in rows], z, self.enc_version)
-        self.bus.publish("reembed", n=len(rows), version=self.enc_version)
-        return len(rows)
+        """Re-embed stale turns. force=True re-embeds *every* turn with the current encoder
+        (used after swapping in a new checkpoint), in batches, bumping enc_version first so
+        the stored version reflects the new encoder."""
+        if force:
+            self.enc_version += 1
+            self.publish_snapshot()
+        min_version = self.enc_version - (0 if force else lag)
+        total = 0
+        while True:
+            ids = self.memory.stale_turn_ids(min_version, limit=512)
+            if not ids:
+                break
+            rows = self.memory.get_turns(ids)
+            z = self._embed_on_device([r.text for r in rows])
+            self.memory.update_latents([r.id for r in rows], z, self.enc_version)
+            total += len(rows)
+            if not force:
+                break
+        if total:
+            self.bus.publish("reembed", n=total, version=self.enc_version)
+        return total
 
     # ------------------------------------------------------------ training
     def _batches(self) -> tuple[tuple[torch.Tensor, ...] | None, tuple[torch.Tensor, ...] | None]:

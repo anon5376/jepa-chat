@@ -32,11 +32,13 @@ async def test_tools_and_observe(runtime):
         assert not r.is_error
         sc = json.loads(r.content[0].text)
         assert sc["mouth"] == "cursor" and sc["surprise_label"] == "first"
-        r2 = await c.call_tool("jepa_observe", {"role": "assistant", "text": "hi!", "mouth": "cursor"})
+        r2 = await c.call_tool(
+            "jepa_observe", {"role": "assistant", "text": "hi there, how can I help?", "mouth": "cursor"}
+        )
         assert isinstance(json.loads(r2.content[0].text)["surprise"], float)
         st = json.loads((await c.call_tool("jepa_state", {})).content[0].text)
         assert st["n_turns"] == 2 and "map" not in st
-        rec = json.loads((await c.call_tool("jepa_recall", {"query": "hello", "k": 2})).content[0].text)
+        rec = json.loads((await c.call_tool("jepa_recall", {"query": "hello core", "k": 2})).content[0].text)
         assert rec["hits"] and "text" not in rec["hits"][0]
         prompts = {p.name for p in (await c.list_prompts()).prompts}
         assert "jepa_briefing" in prompts

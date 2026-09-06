@@ -1,17 +1,19 @@
 model:
-  max_len: 512
+  max_len: 1024
   d_model: 128
   n_heads: 4
   n_layers: 4
   predictor_d_model: 64
   predictor_n_layers: 2
+  var_coef: 1.0
+  cov_coef: 0.05
 mask:
   num_targets: 3
   target_span_frac: [0.15, 0.35]
   min_context_frac: 0.4
 train:
-  seq_len: 256
-  batch_size: 64
+  seq_len: 384
+  batch_size: 48
   lr: 0.0003
   ema_start: 0.996
   ema_end: 1.0
@@ -20,5 +22,5 @@ conversation:
   d_model: 128
   n_layers: 4
   max_turns: 64
-  head_bytes: 384
-  tail_bytes: 128
+  head_bytes: 768
+  tail_bytes: 256

@@ -20,6 +20,22 @@ class JEPAOutput:
     pred: torch.Tensor  # (N, D) predicted target latents
     target: torch.Tensor  # (N, D) EMA target latents
     latent_std: torch.Tensor  # scalar: mean per-dim std of targets, a cheap collapse monitor
+    pred_loss: torch.Tensor | None = None
+    reg_loss: torch.Tensor | None = None
+
+
+def variance_covariance(z: torch.Tensor, eps: float = 1e-4) -> tuple[torch.Tensor, torch.Tensor]:
+    """VICReg regularisers on a batch of latents (N, D): hinge on per-dim std, off-diagonal covariance."""
+    z = z - z.mean(0, keepdim=True)
+    std = torch.sqrt(z.var(0) + eps)
+    var_term = F.relu(1.0 - std).mean()
+    n, d = z.shape
+    if n < 2:
+        return var_term, z.new_zeros(())
+    cov = (z.T @ z) / (n - 1)
+    off = cov - torch.diag(torch.diag(cov))
+    cov_term = (off**2).sum() / d
+    return var_term, cov_term
 
 
 class TextJEPA(nn.Module):
@@ -47,9 +63,16 @@ class TextJEPA(nn.Module):
         pred_all = self.predictor(ctx, context_mask, target_mask)
         pred = pred_all[target_mask]
 
-        loss = F.smooth_l1_loss(pred, target)
+        pred_loss = F.smooth_l1_loss(pred, target)
+        loss = pred_loss
+        reg = None
+        if self.cfg.var_coef > 0 or self.cfg.cov_coef > 0:
+            online = ctx[context_mask]
+            var_term, cov_term = variance_covariance(online)
+            reg = self.cfg.var_coef * var_term + self.cfg.cov_coef * cov_term
+            loss = loss + reg
         latent_std = target.std(dim=0).mean() if target.shape[0] > 1 else target.new_zeros(())
-        return JEPAOutput(loss=loss, pred=pred, target=target, latent_std=latent_std)
+        return JEPAOutput(loss=loss, pred=pred, target=target, latent_std=latent_std, pred_loss=pred_loss, reg_loss=reg)
 
     @torch.no_grad()
     def update_target_encoder(self, momentum: float) -> None:

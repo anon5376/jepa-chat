@@ -32,10 +32,17 @@ def text_hash(text: str) -> str:
     return hashlib.sha1(text.strip().encode("utf-8")).hexdigest()
 
 
-def norm_for_index(z: np.ndarray) -> np.ndarray:
-    """Feature-standardise (like normalize_latent) then L2-normalise, rows of (N,D) or (D,)."""
+def norm_for_index(z: np.ndarray, mu: np.ndarray | None = None, sd: np.ndarray | None = None) -> np.ndarray:
+    """Whiten against the memory's global per-dimension mean/std, then L2-normalise.
+
+    Without whitening, encoder latents that share one dominant direction all have cosine ~1.
+    Falls back to per-row standardisation when no global stats exist yet.
+    """
     z = np.asarray(z, dtype=np.float32)
-    z = (z - z.mean(-1, keepdims=True)) / (z.std(-1, keepdims=True) + 1e-5)
+    if mu is not None and sd is not None:
+        z = (z - mu) / sd
+    else:
+        z = (z - z.mean(-1, keepdims=True)) / (z.std(-1, keepdims=True) + 1e-5)
     return z / (np.linalg.norm(z, axis=-1, keepdims=True) + 1e-8)
 
 
@@ -95,8 +102,12 @@ class MemoryStore:
         self._db.executescript(_SCHEMA)
         self._db.commit()
         self._ids: list[int] = []
+        self._raw = np.zeros((0, dim), np.float32)
         self._index = np.zeros((0, dim), np.float32)
         self._pos: dict[int, int] = {}
+        self._mu: np.ndarray | None = None
+        self._sd: np.ndarray | None = None
+        self._adds_since_refit = 0
         self._rebuild_index()
 
     # ------------------------------------------------------------ index
@@ -109,17 +120,35 @@ class MemoryStore:
                 ids.append(int(r["id"]))
                 vecs.append(v)
         self._ids = ids
-        self._index = norm_for_index(np.stack(vecs)) if vecs else np.zeros((0, self.dim), np.float32)
+        self._raw = np.stack(vecs) if vecs else np.zeros((0, self.dim), np.float32)
         self._pos = {tid: i for i, tid in enumerate(ids)}
+        self._refit()
+
+    def _refit(self) -> None:
+        """Recompute whitening stats from all raw latents and re-normalise the index."""
+        if self._raw.shape[0] >= 8:
+            self._mu = self._raw.mean(0)
+            self._sd = self._raw.std(0) + 1e-5
+        else:
+            self._mu = self._sd = None
+        self._index = norm_for_index(self._raw, self._mu, self._sd) if self._raw.shape[0] else self._raw.copy()
+        self._adds_since_refit = 0
 
     def _index_add(self, tid: int, latent: np.ndarray) -> None:
-        v = norm_for_index(latent)[None]
+        raw = np.asarray(latent, np.float32)[None]
+        v = norm_for_index(raw, self._mu, self._sd)
         if tid in self._pos:
+            self._raw[self._pos[tid]] = raw[0]
             self._index[self._pos[tid]] = v[0]
-            return
-        self._pos[tid] = len(self._ids)
-        self._ids.append(tid)
-        self._index = np.concatenate([self._index, v], 0)
+        else:
+            self._pos[tid] = len(self._ids)
+            self._ids.append(tid)
+            self._raw = np.concatenate([self._raw, raw], 0)
+            self._index = np.concatenate([self._index, v], 0)
+        self._adds_since_refit += 1
+        n = self._raw.shape[0]
+        if self._mu is None and n >= 8 or self._adds_since_refit >= max(64, n // 10):
+            self._refit()
 
     # --------------------------------------------------------- sessions
     def create_session(
@@ -301,7 +330,7 @@ class MemoryStore:
         with self._lock:
             if self._index.shape[0] == 0:
                 return []
-            q = norm_for_index(query)
+            q = norm_for_index(query, self._mu, self._sd)
             scores = self._index @ q
             order = np.argsort(-scores)
             hits: list[Hit] = []

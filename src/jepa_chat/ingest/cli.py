@@ -8,7 +8,7 @@ from collections import Counter
 from pathlib import Path
 
 from jepa_chat.data.turns import Session, write_jsonl
-from jepa_chat.ingest import parse_chatgpt, parse_claude, parse_claude_code, parse_markdown
+from jepa_chat.ingest import parse_chatgpt, parse_claude, parse_claude_code, parse_codex, parse_cursor, parse_markdown
 
 DEFAULT_OUT = Path("~/.jepa-chat/data/turns.jsonl").expanduser()
 
@@ -23,9 +23,24 @@ def collect(args: argparse.Namespace) -> list[Session]:
         sessions.extend(parse_markdown(p))
     if args.claude_code:
         sessions.extend(parse_claude_code(args.claude_code_root))
+    if args.codex:
+        sessions.extend(parse_codex(args.codex_root, include_subagents=args.codex_subagents))
+    if args.cursor:
+        sessions.extend(parse_cursor())
+    if args.all_local:
+        sessions.extend(parse_claude_code(args.claude_code_root))
+        sessions.extend(parse_codex(args.codex_root, include_subagents=args.codex_subagents))
+        sessions.extend(parse_cursor())
     sessions = [s for s in sessions if len(s.turns) >= args.min_turns]
-    sessions.sort(key=lambda s: s.created_ts or 0.0)
-    return sessions
+    seen: set[str] = set()
+    unique = []
+    for s in sessions:
+        if s.id in seen:
+            continue
+        seen.add(s.id)
+        unique.append(s)
+    unique.sort(key=lambda s: s.created_ts or 0.0)
+    return unique
 
 
 def summarize(sessions: list[Session]) -> str:
@@ -51,6 +66,11 @@ def main() -> None:
     ap.add_argument("--markdown", action="append", help="markdown transcript(s) (.md/.zip/dir)")
     ap.add_argument("--claude-code", action="store_true", help="include local Claude Code transcripts")
     ap.add_argument("--claude-code-root", default=None, help="override ~/.claude/projects")
+    ap.add_argument("--codex", action="store_true", help="include local Codex CLI rollouts")
+    ap.add_argument("--codex-root", default=None, help="override ~/.codex/{sessions,archived_sessions}")
+    ap.add_argument("--codex-subagents", action="store_true", help="also include Codex subagent rollouts")
+    ap.add_argument("--cursor", action="store_true", help="include Cursor IDE chats and Cursor CLI transcripts")
+    ap.add_argument("--all-local", action="store_true", help="claude-code + codex + cursor")
     ap.add_argument("--min-turns", type=int, default=2)
     ap.add_argument("--out", default=str(DEFAULT_OUT))
     args = ap.parse_args()

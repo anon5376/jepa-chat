@@ -1,0 +1,17 @@
+Screen {
+    layout: grid;
+    grid-size: 3 3;
+    grid-rows: 1fr 1fr 12;
+    grid-columns: 2fr 1fr 1fr;
+    grid-gutter: 0 1;
+}
+#map { row-span: 2; border: round $accent; }
+#surprise { border: round $warning; height: 100%; }
+#memory { border: round $success; }
+#training { border: round $secondary; }
+#sessions { border: round $primary; }
+#log { column-span: 3; border: round $panel; }
+.title { text-style: bold; color: $text; }
+.big { text-style: bold; }
+Sparkline { height: 3; margin: 0 1; }
+DataTable { height: 1fr; }

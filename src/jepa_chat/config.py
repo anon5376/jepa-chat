@@ -18,6 +18,8 @@ class ModelConfig:
     predictor_d_model: int = 64
     predictor_n_layers: int = 2
     dropout: float = 0.0
+    var_coef: float = 0.0  # VICReg-style variance term on online-encoder latents (anti-collapse)
+    cov_coef: float = 0.0  # VICReg-style covariance term (anti dimensional collapse)
 
 
 @dataclass
